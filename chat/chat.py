@@ -230,7 +230,6 @@ async def ChatStream(
     api_key: str, 
     list_mcp_tools: list[str] | None = None, 
     system_prompt: str = "", 
-    list_configs: list[str] | None = None, 
     human_message: str = "", 
     tool_names: list[str] | None = None, 
     workspace_path: str = "",

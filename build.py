@@ -49,48 +49,83 @@ def build():
     print("[+] Starting Nuitka build...")
     
     output_dir = ".build"
-    
+    main_file = "main.py"
     # 基础命令
     cmd = [
         sys.executable, "-m", "nuitka",
         "--standalone",           # 独立环境，不依赖系统 Python
-        "--onefile",              # 打包成单文件 (如果想文件夹形式，注释掉这一行)
+        # "--onefile",              # 打包成单文件 (已注释，使用文件夹模式)
         "--assume-yes-for-downloads", # 自动下载必要的编译器/依赖
         f"--output-dir={output_dir}", # 输出目录
         "--remove-output",        # 构建后删除临时文件
         "--show-progress",        # 显示进度条
         "--show-memory",          # 显示内存使用
-    ]
+        
+        # ====== 让 Nuitka 自动追踪所有导入 ======
+        "--follow-imports",       # 跟踪所有导入（这是关键！）
+        
+        # 手动包含本地包
+        "--include-package=utils",
+        "--include-package=chat",
+        "--include-package=agent",
+        "--include-package=tools",
+        
+        # 强制包含 LangChain 核心库及其所有子模块（使用延迟加载，必须显式包含）
+        "--include-package=langchain",
+        "--include-package=langchain_core",
+        "--include-package=langchain_core.load",
+        "--include-module=langchain_core.load.dump",
+        "--include-module=langchain_core.load.load",
+        "--include-module=langchain_core.load.serializable",
+        "--include-package=langchain_core.runnables",
+        "--include-package=langchain_core.tracers",
+        "--include-package=langchain_core.callbacks",
+        "--include-package=langgraph",
+        "--include-package=deepagents",
+        "--include-package=langchain_community",
+        
+        # 手动包含 LangChain 动态加载的扩展（通过配置字符串加载，静态分析无法追踪）
+        "--include-package=langchain_deepseek",
+        "--include-package=langchain_openai",
+        "--include-package=langchain_ollama",
+        "--include-package=langchain_gemini",
+        "--include-package=langchain_anthropic",
+        "--include-package=langchain_groq",
+        
+        # 包含 MCP 相关包（可能也使用动态导入）
+        "--include-package=mcp",
+        "--include-package=langchain_mcp_adapters",
+        
+        # 包含其他可能动态导入的包
+        "--include-package=pydantic",
+        "--include-package=pydantic_core",
+        "--include-package=httpx",
+        "--include-package=openai",
+        "--include-package=anthropic",
+        "--include-package=rich",
+        "--include-package=aiosqlite",
+        
+        # 包含数据文件
+        # "--include-data-dir=./data=data",
 
-    # 包含的关键包 (防止动态导入丢失)
-    packages_to_include = [
-        "langchain",
-        "langgraph",
-        "deepagents",
-        "langchain_core",
-        "langchain_mcp_adapters",
-        "mcp",
-        "rich",
-        "prompt_toolkit",
-        "pydantic",
-        "aiosqlite",
-        "utils", # 本地包
-        "chat",  # 本地包
+        # 优化选项
+        "--noinclude-pytest-mode=nofollow",
+        "--noinclude-setuptools-mode=nofollow",
+        
+        # 显式禁止 aiosqlite 导入测试模块（消除 anti-bloat 警告）
+        "--nofollow-import-to=aiosqlite.tests",
+        "--nofollow-import-to=unittest",
+        "--nofollow-import-to=doctest",
     ]
     
-    for package in packages_to_include:
-        cmd.append(f"--include-package={package}")
-
-    # 排除不必要的标准库以减小体积
-    cmd.append("--noinclude-pytest-mode=nofollow")
-    cmd.append("--noinclude-setuptools-mode=nofollow")
-    # cmd.append("--enable-plugin=anti-bloat") # 启用防膨胀插件
+    print("[*] Using Nuitka's automatic import tracking (--follow-imports)")
+    print("    This will automatically detect and include all required packages")
 
     # 添加系统特定参数
     cmd.extend(get_os_specific_flags())
 
     # 指定入口文件
-    cmd.append("main.py")
+    cmd.append(main_file)
 
     # 打印并执行命令
     print(f"[>] Command: {' '.join(cmd)}")
@@ -105,8 +140,15 @@ def post_build():
     """构建后处理：复制配置文件等"""
     print("[*] Running post-build tasks...")
     
-    dist_dir = ".build"
+    # 在 standalone 模式下，Nuitka 会创建一个 .dist 文件夹
+    # 例如 main.py -> main.dist
+    dist_dir = os.path.join(".build", "main.dist")
     
+    if not os.path.exists(dist_dir):
+        print(f"    [WARNING] Dist directory {dist_dir} not found. Did the build fail or using onefile mode?")
+        # 回退尝试直接在 .build 中找（兼容 onefile）
+        dist_dir = ".build"
+
     # 查找示例配置文件
     # 找 config.example.toml
     possible_configs = "config.example.toml"
@@ -116,7 +158,7 @@ def post_build():
         source_config = possible_configs
             
     if source_config:
-        # 目标文件名 config.toml
+        # 目标文件名 config.toml，放入 dist 目录与可执行文件同级
         target_config = os.path.join(dist_dir, "config.toml")
         try:
             shutil.copy2(source_config, target_config)
@@ -126,7 +168,7 @@ def post_build():
     else:
         print(f"    [WARNING] No example config file found: {possible_configs}")
 
-    print(f"\n[DONE] All done! executable is in '{dist_dir}' folder.")
+    print(f"\n[DONE] All done! Build output is in '{dist_dir}' folder.")
 
 if __name__ == "__main__":
     # 确保安装了 Nuitka

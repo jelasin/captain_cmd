@@ -19,23 +19,23 @@ jobs:
           - name: Windows x64
             os: windows-latest
             arch: x64
-            artifact_name: captain-cmd-windows-x64.exe
-            rename_from: main.exe
+            artifact_name: captain-cmd-windows-x64
+            package_ext: zip
           - name: Linux x64
             os: ubuntu-latest
             arch: x64
             artifact_name: captain-cmd-linux-x64
-            rename_from: main
+            package_ext: tar.gz
           - name: macOS x64
             os: macos-13
             arch: x64
             artifact_name: captain-cmd-macos-x64
-            rename_from: main
+            package_ext: tar.gz
           - name: macOS ARM64
             os: macos-latest
             arch: arm64
             artifact_name: captain-cmd-macos-arm64
-            rename_from: main
+            package_ext: tar.gz
         python-version: ['3.13']
       fail-fast: false
 
@@ -83,26 +83,27 @@ jobs:
       run: |
         ls -la .build/
       shell: bash
-    - name: Rename artifacts (Windows)
+    - name: Package artifacts (Windows)
       if: runner.os == 'Windows'
       run: |
         cd .build
-        if (Test-Path "${{ matrix.platform.rename_from }}") {
-          Rename-Item -Path "${{ matrix.platform.rename_from }}" -NewName "${{ matrix.platform.artifact_name }}"
+        # Nuitka standalone 输出目录为 main.dist
+        if (Test-Path "main.dist") {
+          Rename-Item -Path "main.dist" -NewName "${{ matrix.platform.artifact_name }}"
+          Compress-Archive -Path "${{ matrix.platform.artifact_name }}" -DestinationPath "${{ matrix.platform.artifact_name }}.zip"
         }
       shell: pwsh
 
-    - name: Rename artifacts (Unix)
+    - name: Package artifacts (Unix)
       if: runner.os != 'Windows'
       run: |
         cd .build
-        if [ -f "${{ matrix.platform.rename_from }}" ]; then
-          mv "${{ matrix.platform.rename_from }}" "${{ matrix.platform.artifact_name }}"
-          chmod +x "${{ matrix.platform.artifact_name }}"
-        elif [ -f "${{ matrix.platform.rename_from }}.bin" ]; then
-          mv "${{ matrix.platform.rename_from }}.bin" "${{ matrix.platform.artifact_name }}"
-          chmod +x "${{ matrix.platform.artifact_name }}"
+        # Nuitka standalone 输出目录为 main.dist
+        if [ -d "main.dist" ]; then
+          mv main.dist ${{ matrix.platform.artifact_name }}
+          tar -czf ${{ matrix.platform.artifact_name }}.tar.gz ${{ matrix.platform.artifact_name }}
         fi
+      shell: bash
 
     # 上传构建产物
     - name: Upload artifacts
@@ -110,8 +111,7 @@ jobs:
       with:
         name: ${{ matrix.platform.artifact_name }}
         path: |
-          .build/${{ matrix.platform.artifact_name }}
-          .build/*.toml
+          .build/${{ matrix.platform.artifact_name }}.${{ matrix.platform.package_ext }}
         retention-days: 30
         if-no-files-found: warn
 
@@ -134,10 +134,10 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          artifacts/captain-cmd-windows-x64.exe/*
-          artifacts/captain-cmd-linux-x64/*
-          artifacts/captain-cmd-macos-x64/*
-          artifacts/captain-cmd-macos-arm64/*
+          artifacts/captain-cmd-windows-x64/*.zip
+          artifacts/captain-cmd-linux-x64/*.tar.gz
+          artifacts/captain-cmd-macos-x64/*.tar.gz
+          artifacts/captain-cmd-macos-arm64/*.tar.gz
         draft: false
         prerelease: false
         generate_release_notes: true

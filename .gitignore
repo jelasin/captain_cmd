@@ -3,3 +3,4 @@ config.toml
 test.py
 .captain/
 .build/
+__pycache__
